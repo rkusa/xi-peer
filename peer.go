@@ -102,7 +102,7 @@ func (p *Peer) run() {
 	}
 }
 
-func (p *Peer) send(call *Call) {
+func (p *Peer) sendRequest(call *Call) {
 	p.reqMutex.Lock()
 	defer p.reqMutex.Unlock()
 
@@ -127,6 +127,14 @@ func (p *Peer) send(call *Call) {
 	}
 }
 
+func (p *Peer) sendNotification(call *Call) error {
+	p.reqMutex.Lock()
+	defer p.reqMutex.Unlock()
+
+	// encode and send
+	return p.out.Encode(call)
+}
+
 func (call *Call) done() {
 	select {
 	case call.Done <- call:
@@ -142,12 +150,12 @@ func (p *Peer) Handle(method string, handler Handler) {
 	p.handlerMutex.Unlock()
 }
 
-func (p *Peer) CallSync(method string, params interface{}, reply interface{}) error {
-	call := <-p.Call(method, params, reply, make(chan *Call, 1)).Done
+func (p *Peer) RequestSync(method string, params interface{}, reply interface{}) error {
+	call := <-p.Request(method, params, reply, make(chan *Call, 1)).Done
 	return call.Error
 }
 
-func (p *Peer) Call(method string, params interface{}, reply interface{}, done chan *Call) *Call {
+func (p *Peer) Request(method string, params interface{}, reply interface{}, done chan *Call) *Call {
 	if done == nil {
 		done = make(chan *Call, 10)
 	} else if cap(done) == 0 {
@@ -161,6 +169,17 @@ func (p *Peer) Call(method string, params interface{}, reply interface{}, done c
 		Done:   done,
 	}
 
-	p.send(call)
+	p.sendRequest(call)
 	return call
+}
+
+func (p *Peer) Notify(method string, params interface{}) error {
+	call := &Call{
+		Method: method,
+		Params: params,
+		Reply:  nil,
+		Done:   nil,
+	}
+
+	return p.sendNotification(call)
 }
